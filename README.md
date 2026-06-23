@@ -13,7 +13,7 @@ A local music discovery app using:
 cd backend
 cp .env.example .env
 npm install
-pip install ytmusicapi
+pip install -r requirements.txt
 npm start
 ```
 
