@@ -1,4 +1,4 @@
-# Zentrmrs
+# ZentrMRS
 
 A local music discovery app using:
 
