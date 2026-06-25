@@ -12,12 +12,58 @@ import { similarTracksForSeed, uniqueRecommendations } from './lastfm.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// --- Constants ---
+const PORT = process.env.PORT || 4000;
+const TEMP_DIR = path.join(__dirname, 'temp_downloads');
+
+// Ensure temp directory exists
+if (!fs.existsSync(TEMP_DIR)) {
+	fs.mkdirSync(TEMP_DIR, { recursive: true });
+	console.log(`[Cleanup] Created temp directory: ${TEMP_DIR}`);
+}
+
+// --- Cleanup function: delete files older than 2 hours ---
+function cleanupTempFiles() {
+	try {
+		const files = fs.readdirSync(TEMP_DIR);
+		const now = Date.now();
+		const maxAge = 2 * 60 * 60 * 1000; // 2 hours
+		let deletedCount = 0;
+
+		for (const file of files) {
+			const filePath = path.join(TEMP_DIR, file);
+			try {
+				const stats = fs.statSync(filePath);
+				if (now - stats.mtimeMs > maxAge) {
+					fs.unlinkSync(filePath);
+					deletedCount++;
+					console.log(`[Cleanup] Deleted old temp file: ${file}`);
+				}
+			} catch (e) {
+				// File might be in use or already deleted – ignore
+				console.error(`[Cleanup] Error processing ${file}:`, e.message);
+			}
+		}
+
+		if (deletedCount > 0) {
+			console.log(`[Cleanup] Removed ${deletedCount} old temp file(s) from ${TEMP_DIR}`);
+		}
+	} catch (e) {
+		console.error('[Cleanup] Error during temp cleanup:', e.message);
+	}
+}
+
+// Run cleanup once on startup
+cleanupTempFiles();
+
+// Run cleanup every hour (3600000 ms)
+setInterval(cleanupTempFiles, 3600000);
+
+// --- Express app ---
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
-
-const PORT = process.env.PORT || 4000;
 
 // --- Helper: get total audio item count for a library ---
 async function getViewItemCount(viewId, userId) {
@@ -36,7 +82,7 @@ async function getViewItemCount(viewId, userId) {
 	}
 }
 
-// --- YouTube resolver (unchanged) ---
+// --- YouTube resolver ---
 async function resolveYoutubeVideoId(query) {
 	return new Promise((resolve) => {
 		const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
@@ -176,9 +222,7 @@ app.get('/api/download', async (req, res) => {
 		const url = String(req.query.url || '').trim();
 		if (!url) return res.status(400).json({ error: 'url is required' });
 
-		const TEMP_DIR = path.join(__dirname, 'temp_downloads');
-		if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
-
+		// Temp directory is already created globally
 		const titleArgs = ['--print', '%(title)s', url];
 		const titleProc = spawn('yt-dlp', titleArgs);
 		let title = '';
